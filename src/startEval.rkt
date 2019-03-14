@@ -1,10 +1,16 @@
+;=======================================================================================================================
 ; CPSC 3740
 ; Project - startEval.rkt
 ; Written By: Eric Den Haan
+;=======================================================================================================================
 
 ; Imports
 #lang racket
 (require test-engine/racket-tests)
+
+;=======================================================================================================================
+; Environment Setup
+;=======================================================================================================================
 
 ; Environment entry struct:
 (define-struct envEntry ([value #:mutable]))
@@ -38,13 +44,17 @@
 ; Return an empty environment:
 (define (emptyEnv) (hash))
 
+;=======================================================================================================================
+; Evaluation
+;=======================================================================================================================
+
 ; Evaluate constants
 (define (evalConst constant)
   constant)
 
 ; Evaluate quote
 (define (evalQuote expr)
-  (startEval (second expr)))
+  (second expr))
 
 ; Test for binary operator
 (define (binOpMatch expr)
@@ -90,7 +100,32 @@
 
 ; Evaluate equal?
 (define (evalEqual expr)
-  (myequal? (startEval(second expr)) (startEval(third expr))))
+  (myequal? (startEval (second expr)) (startEval (third expr))))
+
+; List operations
+(define (evalCar expr)
+  (define (recursivePosition) (car (car (cdr expr))))
+  (define (firstElement) (car (car (cdr (car (cdr expr))))))
+  (cond
+    [(equal? (recursivePosition) 'car) (car (startEval (second expr)))]
+    [(equal? (recursivePosition) 'cdr) (car (startEval (second expr)))]
+    [(equal? (recursivePosition) 'cons) (car (startEval (second expr)))]
+    [else (firstElement)]))
+
+(define (evalCdr expr)
+  (define (recursivePosition) (car (car (cdr expr))))
+  (define (lastElement) (cdr (last (car (cdr expr)))))
+  (cond
+    [(equal? (recursivePosition) 'car) (car (startEval (second expr)))]
+    [(equal? (recursivePosition) 'cdr) (cdr (startEval (second expr)))]
+    [(equal? (recursivePosition) 'cons) (car (startEval (second expr)))]
+    [else (lastElement)]))
+
+(define (evalCons expr)
+  (cons (startEval (second expr)) (startEval (third expr))))
+
+(define (evalPair expr)
+  (pair? (startEval (second expr))))
 
 ; startEval function
 ; All parsing of expressions starts here
@@ -106,17 +141,26 @@
     ; Binary operators
     [(binOpMatch program) (evalBinOp program)]
     ; equal?
-    [(equal? (car program) 'equal?) (evalEqual program)]))
+    [(equal? (car program) 'equal?) (evalEqual program)]
+    ; List operations
+    [(equal? (car program) 'car) (evalCar program)]
+    [(equal? (car program) 'cdr) (evalCdr program)]
+    [(equal? (car program) 'cons) (evalCons program)]
+    [(equal? (car program) 'pair?) (evalPair program)]
+    ))
 
+;=======================================================================================================================
 ; Unit tests
+;=======================================================================================================================
 
 ; Constants and variables
 (check-expect (startEval '1) 1)
 (check-expect (startEval 'a) 'a)
 
 ; quote
-(check-expect (startEval '(quote 1)) 1)
-;(check-expect (startEval '(quote (123))) (quote (123)))
+(check-expect (startEval '(quote a)) (quote a))
+(check-expect (startEval '(quote 1)) (quote 1))
+(check-expect (startEval '(quote (123))) (quote (123)))
 
 ; Binary operators
 (check-expect (startEval '(+ 1 2)) 3)
@@ -124,10 +168,10 @@
 (check-expect (startEval '(+ (+ 2 2) (+ 2 2))) 8)
 (check-expect (startEval '(- 2 1)) 1)
 (check-expect (startEval '(- 2 (- 1 1))) 2)
-(check-expect (startEval '(- (- 2 1) (- 2 1))) 0)
+(check-expect (startEval '(- (- 2 1) (+ 2 1))) -2)
 (check-expect (startEval '(* 2 1)) 2)
 (check-expect (startEval '(* 2 (* 2 1))) 4)
-(check-expect (startEval '(* (* 2 2) (* 2 2))) 16)
+(check-expect (startEval '(* (* 2 2) (+ 2 2))) 16)
 (check-expect (startEval '(/ 2 1)) 2)
 (check-expect (startEval '(/ 4 (/ 2 1))) 2)
 (check-expect (startEval '(/ (/ 4 2) (/ 4 2))) 1)
@@ -140,6 +184,25 @@
 (check-expect (startEval '(equal? '1 '2)) #f)
 (check-expect (startEval '(equal? '(123) '(123))) #t)
 (check-expect (startEval '(equal? (+ 1 1) (+ 1 1))) #t)
+
+; List operations
+(check-expect (startEval '(car '(1 2 3))) (car '(1 2 3)))
+(check-expect (startEval '(car '((1 2) 2 3))) (car '((1 2) 2 3)))
+(check-expect (startEval '(car '(((1 2) 1 2) 2 3))) (car '(((1 2) 1 2) 2 3)))
+(check-expect (startEval '(car (car '((1 2) 3)))) (car (car '((1 2) 3))))
+(check-expect (startEval '(car (car (car '((((1 2) 3) 4)))))) (car (car (car '((((1 2) 3) 4))))))
+(check-expect (startEval '(cdr '(1 2 3))) (cdr '(1 2 3)))
+(check-expect (startEval '(cdr '(2 3 (1 2)))) (cdr '(2 3 (1 2))))
+(check-expect (startEval '(cdr '(2 3 ((1 2) 1 2)))) (cdr '(2 3 ((1 2) 1 2))))
+(check-expect (startEval '(cdr (cdr '(1 2 (3 4 5))))) (cdr (cdr '(1 2 (3 4 5)))))
+(check-expect (startEval '(car (cdr (cdr '(1 2 (3 4 5)))))) (car (cdr (cdr '(1 2 (3 4 5))))))
+(check-expect (startEval '(cons 1 2)) (cons 1 2))
+(check-expect (startEval '(cons '(1 2) '(1 2))) (cons '(1 2) '(1 2)))
+(check-expect (startEval '(cons (cons 1 2) 3)) (cons (cons 1 2) 3))
+(check-expect (startEval '(cons (cons 1 2) (car '(3 4)))) (cons (cons 1 2) (car '(3 4))))
+(check-expect (startEval '(car (cons (cons 1 2) (cdr '(3 4))))) (car (cons (cons 1 2) (cdr '(3 4)))))
+(check-expect (startEval '(pair? '(1 2))) (pair? '(1 2)))
+(check-expect (startEval '(pair? (car (cons (cons 1 2) (cdr '(3 4)))))) (pair? (car (cons (cons 1 2) (cdr '(3 4))))))
 
 ; Run the tests
 (test)
