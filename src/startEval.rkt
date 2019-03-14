@@ -127,6 +127,12 @@
 (define (evalPair expr)
   (pair? (startEval (second expr))))
 
+; Evaluate if statements
+(define (evalIf stmt)
+  (if (startEval (second stmt))
+      (startEval (third stmt))
+      (startEval (fourth stmt))))
+
 ; startEval function
 ; All parsing of expressions starts here
 (define (startEval program)
@@ -147,6 +153,8 @@
     [(equal? (car program) 'cdr) (evalCdr program)]
     [(equal? (car program) 'cons) (evalCons program)]
     [(equal? (car program) 'pair?) (evalPair program)]
+    ; if
+    [(equal? (car program) 'if) (evalIf program)]
     ))
 
 ;=======================================================================================================================
@@ -204,5 +212,34 @@
 (check-expect (startEval '(pair? '(1 2))) (pair? '(1 2)))
 (check-expect (startEval '(pair? (car (cons (cons 1 2) (cdr '(3 4)))))) (pair? (car (cons (cons 1 2) (cdr '(3 4))))))
 
+; if statements
+(check-expect (startEval
+               '(if (< (+ 1 2) (- 4 3))
+                    #t
+                    #f))
+              (if (< (+ 1 2) (- 4 3))
+                  #t
+                  #f))
+
+(check-expect (startEval
+               '(if (equal? (cons 1 2) (cons 2 1))
+                    #t
+                    #f))
+              (if (equal? (cons 1 2) (cons 2 1))
+                    #t
+                    #f))
+
+(check-expect (startEval
+               '(if (if (< 1 2)
+                        #t
+                        #f)
+                    (+ 1 2)
+                    (+ 3 4)))
+              (if (if (< 1 2)
+                        #t
+                        #f)
+                    (+ 1 2)
+                    (+ 3 4)))
+                        
 ; Run the tests
 (test)
