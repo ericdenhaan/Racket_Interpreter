@@ -1,6 +1,6 @@
 ;=======================================================================================================================
 ; CPSC 3740
-; Project - startEval.rkt
+; Project - evalEnv.rkt
 ; Written By: Eric Den Haan
 ;=======================================================================================================================
 
@@ -49,11 +49,11 @@
 ;=======================================================================================================================
 
 ; Evaluate constants
-(define (evalConst constant)
+(define (evalConst constant env)
   constant)
 
 ; Evaluate quote
-(define (evalQuote expr)
+(define (evalQuote expr env)
   (second expr))
 
 ; Test for binary operator
@@ -71,17 +71,17 @@
     [else #f]))
     
 ; Evaluate binary operator
-(define (evalBinOp expr)
+(define (evalBinOp expr env)
   (cond
-    [(equal? (car expr) '+) (+ (startEval (second expr)) (startEval (third expr)))]
-    [(equal? (car expr) '-) (- (startEval (second expr)) (startEval (third expr)))]
-    [(equal? (car expr) '*) (* (startEval (second expr)) (startEval (third expr)))]
-    [(equal? (car expr) '/) (/ (startEval (second expr)) (startEval (third expr)))]
-    [(equal? (car expr) '=) (= (startEval (second expr)) (startEval (third expr)))]
-    [(equal? (car expr) '<=) (<= (startEval (second expr)) (startEval (third expr)))]
-    [(equal? (car expr) '>=) (>= (startEval (second expr)) (startEval (third expr)))]
-    [(equal? (car expr) '<) (< (startEval (second expr)) (startEval (third expr)))]
-    [(equal? (car expr) '>) (> (startEval (second expr)) (startEval (third expr)))]))
+    [(equal? (car expr) '+) (+ (evalEnv (second expr) env) (evalEnv (third expr) env))]
+    [(equal? (car expr) '-) (- (evalEnv (second expr) env) (evalEnv (third expr) env))]
+    [(equal? (car expr) '*) (* (evalEnv (second expr) env) (evalEnv (third expr) env))]
+    [(equal? (car expr) '/) (/ (evalEnv (second expr) env) (evalEnv (third expr) env))]
+    [(equal? (car expr) '=) (= (evalEnv (second expr) env) (evalEnv (third expr) env))]
+    [(equal? (car expr) '<=) (<= (evalEnv (second expr) env) (evalEnv (third expr) env))]
+    [(equal? (car expr) '>=) (>= (evalEnv (second expr) env) (evalEnv (third expr) env))]
+    [(equal? (car expr) '<) (< (evalEnv (second expr) env) (evalEnv (third expr) env))]
+    [(equal? (car expr) '>) (> (evalEnv (second expr) env) (evalEnv (third expr) env))]))
 
 ; myequal? function used for evalEqual?
 (define (myequal? x y)
@@ -99,62 +99,67 @@
           #f)))
 
 ; Evaluate equal?
-(define (evalEqual expr)
-  (myequal? (startEval (second expr)) (startEval (third expr))))
+(define (evalEqual expr env)
+  (myequal? (evalEnv (second expr) env) (evalEnv (third expr) env)))
 
 ; List operations
-(define (evalCar expr)
+(define (evalCar expr env)
   (define (recursivePosition) (car (car (cdr expr))))
   (define (firstElement) (car (car (cdr (car (cdr expr))))))
   (cond
-    [(equal? (recursivePosition) 'car) (car (startEval (second expr)))]
-    [(equal? (recursivePosition) 'cdr) (car (startEval (second expr)))]
-    [(equal? (recursivePosition) 'cons) (car (startEval (second expr)))]
+    [(equal? (recursivePosition) 'car) (car (evalEnv (second expr) env))]
+    [(equal? (recursivePosition) 'cdr) (car (evalEnv (second expr) env))]
+    [(equal? (recursivePosition) 'cons) (car (evalEnv (second expr) env))]
     [else (firstElement)]))
 
-(define (evalCdr expr)
+(define (evalCdr expr env)
   (define (recursivePosition) (car (car (cdr expr))))
   (define (lastElement) (cdr (last (car (cdr expr)))))
   (cond
-    [(equal? (recursivePosition) 'car) (car (startEval (second expr)))]
-    [(equal? (recursivePosition) 'cdr) (cdr (startEval (second expr)))]
-    [(equal? (recursivePosition) 'cons) (car (startEval (second expr)))]
+    [(equal? (recursivePosition) 'car) (car (evalEnv (second expr) env))]
+    [(equal? (recursivePosition) 'cdr) (cdr (evalEnv (second expr) env))]
+    [(equal? (recursivePosition) 'cons) (car (evalEnv (second expr) env))]
     [else (lastElement)]))
 
-(define (evalCons expr)
-  (cons (startEval (second expr)) (startEval (third expr))))
+(define (evalCons expr env)
+  (cons (evalEnv (second expr) env) (evalEnv (third expr) env)))
 
-(define (evalPair expr)
-  (pair? (startEval (second expr))))
+(define (evalPair expr env)
+  (pair? (evalEnv (second expr) env)))
 
 ; Evaluate if statements
-(define (evalIf stmt)
-  (if (startEval (second stmt))
-      (startEval (third stmt))
-      (startEval (fourth stmt))))
+(define (evalIf stmt env)
+  (if (evalEnv (second stmt) env)
+      (evalEnv (third stmt) env)
+      (evalEnv (fourth stmt) env)))
 
 ; startEval function
-; All parsing of expressions starts here
+; Curry evalEnv by adding an empty env
 (define (startEval program)
+  (evalEnv program (emptyEnv)))
+
+; evalEnv function
+; Take the program and empty env passed from evalEnv and initiate parsing
+(define (evalEnv program env)
   ;(write program)
   (cond
     ; Empty List
     [(null? program) program]
     ; Constants, variables
-    [(not(list? program)) (evalConst program)]
+    [(not(list? program)) (evalConst program env)]
     ; quote
-    [(equal? (car program) 'quote) (evalQuote program)]
+    [(equal? (car program) 'quote) (evalQuote program env)]
     ; Binary operators
-    [(binOpMatch program) (evalBinOp program)]
+    [(binOpMatch program) (evalBinOp program env)]
     ; equal?
-    [(equal? (car program) 'equal?) (evalEqual program)]
+    [(equal? (car program) 'equal?) (evalEqual program env)]
     ; List operations
-    [(equal? (car program) 'car) (evalCar program)]
-    [(equal? (car program) 'cdr) (evalCdr program)]
-    [(equal? (car program) 'cons) (evalCons program)]
-    [(equal? (car program) 'pair?) (evalPair program)]
+    [(equal? (car program) 'car) (evalCar program env)]
+    [(equal? (car program) 'cdr) (evalCdr program env)]
+    [(equal? (car program) 'cons) (evalCons program env)]
+    [(equal? (car program) 'pair?) (evalPair program env)]
     ; if
-    [(equal? (car program) 'if) (evalIf program)]
+    [(equal? (car program) 'if) (evalIf program env)]
     ))
 
 ;=======================================================================================================================
