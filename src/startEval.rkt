@@ -9,7 +9,7 @@
 (require test-engine/racket-tests)
 
 ;=======================================================================================================================
-; Environment Setup
+; Environment data structures and functions
 ;=======================================================================================================================
 
 ; Environment entry struct:
@@ -50,7 +50,9 @@
 
 ; Evaluate constants
 (define (evalConst constant env)
-  constant)
+  (cond
+    [(symbol? constant) (envSearch env constant)]
+    [else constant]))
 
 ; Evaluate quote
 (define (evalQuote expr env)
@@ -133,17 +135,57 @@
       (evalEnv (third stmt) env)
       (evalEnv (fourth stmt) env)))
 
+; Evaluate lambdas
+
+; Some helper functions:
+
+; Return the parameter section of a lambda expression
+(define (lambdaParams fn) (second fn))
+
+; Return the body of a lambda expression
+(define (lambdaBody fn) (fourth fn))
+
+; Create the the textual form of a lambda expression
+(define (createLambdaExpr args body) (list 'lambda (list args) body))
+
+; Determine if a given expression is a lambda expression
+(define (lambdaExpr? expr)
+  (and (pair? expr) (equal? (car expr) 'lambda) (list? (lambdaParams expr))))
+
+; Determine whether beta reduction is possible
+(define (betaReducable? expr)
+  ; Return true if expr is a list, where the first item is a lambda expression
+  ; and the second item is a value that can be applied to the first item
+  (and (pair? expr) (lambdaExpr? expr) (pair? cdr expr)))
+
+; Alpha conversion
+(define (alphaConvert expr sourceArg destArg)
+  (cond 
+    [((equal? expr sourceArg) destArg)]
+    ; If we have an ID collision between expr and sourceArg, return expr
+    ; Else create a new lambda expression and substitute sourceArg for destArg
+    [(lambdaExpr? expr) (if (equal? (lambdaParams expr) sourceArg)
+                             expr
+                             (createLambdaExpr (lambdaParams expr)
+                                               (alphaConvert (lambdaBody expr) sourceArg destArg)))]
+    ; If we have a list of expressions, call alpha conversion recursively on each list member
+    [(pair? expr) (cons (alphaConvert (car expr) sourceArg destArg)
+                        (alphaConvert (cdr expr) sourceArg destArg))]
+    [else expr]))
+
+; Beta reduction
+
+
 ; startEval function
-; Curry evalEnv by adding an empty env
+; Call evalEnv adding an empty environment
 (define (startEval program)
   (evalEnv program (emptyEnv)))
 
 ; evalEnv function
 ; Take the program and empty env passed from evalEnv and initiate parsing
 (define (evalEnv program env)
-  ;(write program)
   (cond
-    ; Empty List
+    ; Empty list
     [(null? program) program]
     ; Constants, variables
     [(not(list? program)) (evalConst program env)]
@@ -160,6 +202,10 @@
     [(equal? (car program) 'pair?) (evalPair program env)]
     ; if
     [(equal? (car program) 'if) (evalIf program env)]
+    ; lambda
+    ; [(equal? (car (car program)) 'lambda) (evalLambda program env)]
+
+    ; If we do not match any of the forms above, 
     ))
 
 ;=======================================================================================================================
@@ -167,8 +213,8 @@
 ;=======================================================================================================================
 
 ; Constants and variables
-(check-expect (startEval '1) 1)
-(check-expect (startEval 'a) 'a)
+(check-expect (startEval '1) '1)
+(check-expect (startEval "Hello") "Hello")
 
 ; quote
 (check-expect (startEval '(quote a)) (quote a))
@@ -245,6 +291,9 @@
                         #f)
                     (+ 1 2)
                     (+ 3 4)))
-                        
+
+; lambda
+(check-expect (startEval `((lambda (x) x) 1)) ((lambda (x) x) 1))
+
 ; Run the tests
 (test)
