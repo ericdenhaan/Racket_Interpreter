@@ -13,6 +13,7 @@
 ;=======================================================================================================================
 
 ; Environment entry struct:
+; #:mutable allows value to be changed
 (define-struct envEntry ([value #:mutable]))
 
 ; Find a variable in a given environment
@@ -20,28 +21,25 @@
   (envEntry-value (hash-ref env var)))
 
 ; Mutate a value in a given environment
-; ! used because we are changing an existing
-; environment entry, which is a side-effect
+; ! used because we are changing an existing environment entry, which is a side-effect
 (define (updateEnvEntry! env var val)
   (set-envEntry-value! (hash-ref env var) val))
 
-; Insert one or more variable-value bindings
-; into a given environment
+; Insert one or more variable-value bindings into a given environment
 (define (envInsert env vars vals)
   (if(and(null? vars) (null? vals))
      env
      (envInsert (hash-set env (car vars) (make-envEntry (car vals))) (cdr vars) (cdr vals))))
 
-; Update multiple variable-value bindings
-; in a given environment
+; Update multiple variable-value bindings in a given environment
 (define (updateEnvEntries! env vars vals)
-    (cond
-      [(and(null? vars) (null? vals)) env]
-      [else
-       (updateEnvEntry! env (car vars) (car vals))
-       (updateEnvEntries! env (cdr vars) (cdr vals))]))
+  (cond
+    [(and(null? vars) (null? vals)) env]
+    [else
+     (updateEnvEntry! env (car vars) (car vals))
+     (updateEnvEntries! env (cdr vars) (cdr vals))]))
 
-; Return an empty environment
+; Return an empty environment - use a hash table data structure
 (define (emptyEnv) (hash))
 
 ;=======================================================================================================================
@@ -49,16 +47,18 @@
 ;=======================================================================================================================
 
 ; Evaluate constants
+; If the constant is a symbol, look in the environment to see if it is defined
+; Else just return the constant
 (define (evalConst constant env)
   (cond
     [(symbol? constant) (envSearch env constant)]
     [else constant]))
 
 ; Evaluate quote
-(define (evalQuote expr env)
-  (second expr))
+; Simply return the second part of the quote expression
+(define (evalQuote expr env) (second expr))
 
-; Test for binary operators
+; Check if the first element of the expression is a binary operator
 (define (binOpMatch expr)
   (cond
     [(equal? (car expr) '+) #t]
@@ -71,7 +71,7 @@
     [(equal? (car expr) '<) #t]
     [(equal? (car expr) '>) #t]
     [else #f]))
-    
+
 ; Evaluate binary operators
 (define (evalBinOp expr env)
   (cond
@@ -105,31 +105,39 @@
   (myequal? (evalEnv (second expr) env) (evalEnv (third expr) env)))
 
 ; List operations
+
+; Check if list operations are recursively being called
+(define (recursivePosition expr)
+  (car (car (cdr expr))))
+
+; car
 (define (evalCar expr env)
-  (define (recursivePosition) (car (car (cdr expr))))
   (define (firstElement) (car (car (cdr (car (cdr expr))))))
   (cond
-    [(equal? (recursivePosition) 'car) (car (evalEnv (second expr) env))]
-    [(equal? (recursivePosition) 'cdr) (car (evalEnv (second expr) env))]
-    [(equal? (recursivePosition) 'cons) (car (evalEnv (second expr) env))]
+    [(equal? (recursivePosition expr) 'car) (car (evalEnv (second expr) env))]
+    [(equal? (recursivePosition expr) 'cdr) (car (evalEnv (second expr) env))]
+    [(equal? (recursivePosition expr) 'cons) (car (evalEnv (second expr) env))]
     [else (firstElement)]))
 
+; cdr
 (define (evalCdr expr env)
-  (define (recursivePosition) (car (car (cdr expr))))
   (define (lastElement) (cdr (last (car (cdr expr)))))
   (cond
-    [(equal? (recursivePosition) 'car) (car (evalEnv (second expr) env))]
-    [(equal? (recursivePosition) 'cdr) (cdr (evalEnv (second expr) env))]
-    [(equal? (recursivePosition) 'cons) (car (evalEnv (second expr) env))]
+    [(equal? (recursivePosition expr) 'car) (car (evalEnv (second expr) env))]
+    [(equal? (recursivePosition expr) 'cdr) (cdr (evalEnv (second expr) env))]
+    [(equal? (recursivePosition expr) 'cons) (car (evalEnv (second expr) env))]
     [else (lastElement)]))
 
+; cons
 (define (evalCons expr env)
   (cons (evalEnv (second expr) env) (evalEnv (third expr) env)))
 
+; pair?
 (define (evalPair expr env)
   (pair? (evalEnv (second expr) env)))
 
 ; Evaluate if statements
+; Construct a new if statement based on the given expression and execute
 (define (evalIf stmt env)
   (if (evalEnv (second stmt) env)
       (evalEnv (third stmt) env)
@@ -146,36 +154,41 @@
 (define (lambdaBody fn) (third fn))
 
 ; Create the the textual form of a lambda expression
-(define (createLambdaExpr params body env) (list 'lambda params body env))
+(define (createLambdaExpr params body env)
+  (list 'lambda params body env))
 
-; Determine if a given expression is a lambda expression
-(define (lambdaExpr? expr)
-  (and (pair? expr) (equal? (car expr) 'lambda) (list? (lambdaParams expr))))
-
-; Evaluate lambda expressions
+; Evaluate lambda expressions by creating and returning the correct lambda form
 (define (evalLambda expr env)
   (createLambdaExpr (lambdaParams expr) (lambdaBody expr) env))
 
 ; Determine if a given expression is a function application
-(define (functionApplication? expr) (pair? expr))
+(define (functionApplication? expr)
+  (pair? expr))
 
 ; Return the environment of a given function
 (define (functionEnvironment fn) (fourth fn))
 
-; Evaluate and return the argument list for a function application
+; Return the argument list for a function application
+; Evaluate each argument using evalEnv, and insert the result into a list
 (define (argList exprs env)
   (map (lambda (argument) (evalEnv argument env)) exprs))
 
 ; Evaluate a function application
+; Call applyFunction passing the evaluated function as well as the evaluated argument list
 (define (evalFunctionApplication expr env)
-     (applyFunction (evalEnv (car expr) env)
-         (argList (cdr expr) env)))
+  (applyFunction
+   (evalEnv (car expr) env)
+   (argList (cdr expr) env)))
 
 ; Apply a function
+; Insert the parameters of the lambda function into the environment
+; Insert the arguments (which have been evaluated in argList) as the values for the parameters
+; Call evalEnv using the body of the function and the environment returned by envInsert
 (define (applyFunction fn args)
   (evalEnv
    (lambdaBody fn)
-   (envInsert (functionEnvironment fn) (lambdaParams fn) args)))
+   (envInsert
+    (functionEnvironment fn) (lambdaParams fn) args)))
 
 ;=======================================================================================================================
 ; Local binding (let and letrec)
@@ -199,43 +212,55 @@
 (define (emptyBindingVals bindings)
   (map (lambda (binding) null) bindings))
 
-; Initialize a set of bindings with empty values in an environment
+; Initialize a set of bindings with names and empty values in an environment
 (define (initializeBindings bindings env)
   (envInsert env (bindingVars bindings) (emptyBindingVals bindings)))
 
-; Insert a set of bindings with values into an environment
+; Insert a set of bindings with names and values into an environment
 (define (insertBindings bindings env)
   (envInsert env (bindingVars bindings) (bindingVals bindings env)))
 
-; Update a set of bindings in an environment
+; Update a set of bindings with names and values in an environment
 (define (updateBindings! bindings env)
   (updateEnvEntries! env (bindingVars bindings) (bindingVals bindings env)))
 
 ; Evaluate let statements
+; Create the equivalent lambda form of a letrec expression and evaluate it as a function application
+; The environment used by evalEnv contains the inserted variables and values given as bindings
 (define (evalLet expr env)
-  (define (functionPart) (list (list 'lambda (bindingVars (letBindings expr)) (letBody expr))))
-  (define (argPart) (bindingVals (letBindings expr) env))
-  (evalEnv (append (functionPart) (argPart)) (insertBindings (letBindings expr) env)))
+  (define (functionPart)
+    (list (list 'lambda (bindingVars (letBindings expr)) (letBody expr))))
+  (define (argPart)
+    (bindingVals (letBindings expr) env))
+  (evalEnv
+   (append (functionPart) (argPart))
+   (insertBindings (letBindings expr) env)))
 
-; Evaluate letrec statments
-(define (evalLetRec expr env)
-  (define (functionPart) (list (list 'lambda '() (letBody expr))))
+; evalLetrec function
+; Create the equivalent lambda form of a letrec expression and evaluate it as a function application
+; The environment used by evalEnv contains the bindings of the letrec expression
+; The bindings are first inserted with blank values
+; They are then updated with the values given in the letrec expression
+(define (evalLetrec expr env)
+  (define (functionPart)
+    (list (list 'lambda '() (letBody expr))))
   (evalEnv
    (functionPart)
-   (updateBindings! (letBindings expr)
-                    (initializeBindings (letBindings expr) env))))
+   (updateBindings!
+    (letBindings expr)
+    (initializeBindings (letBindings expr) env))))
 
 ;=======================================================================================================================
 ; startEval
 ;=======================================================================================================================
 
 ; startEval function
-; Call evalEnv adding an empty environment
+; Call evalEnv and pass an empty environment
 (define (startEval program)
   (evalEnv program (emptyEnv)))
 
 ; evalEnv function
-; Take the program and empty env passed from evalEnv and initiate parsing
+; Parse the expression to determine its form and evaluate the expression appropriately
 (define (evalEnv program env)
   (cond
     ; Empty list
@@ -255,13 +280,13 @@
     [(equal? (car program) 'pair?) (evalPair program env)]
     ; if
     [(equal? (car program) 'if) (evalIf program env)]
-    ; let
+    ; let expressions
     [(equal? (car program) 'let) (evalLet program env)]
-    ; letRec
-    [(equal? (car program) 'letrec) (evalLetRec program env)]
-    ; lambda
+    ; letrec expressions
+    [(equal? (car program) 'letrec) (evalLetrec program env)]
+    ; lambda expressions
     [(equal? (car program) 'lambda) (evalLambda program env)]
-    ; Function application
+    ; Function application - note, this comes last to avoid confusion with other forms
     [(functionApplication? program) (evalFunctionApplication program env)]
     ; If none of the above cases are matched, report an error
     [else (writeln "Failure to evaluate - expression does not match defined language constructs")]))
@@ -271,106 +296,110 @@
 ;=======================================================================================================================
 
 ; Constants and variables
-(check-expect (startEval '1) '1)
-(check-expect (startEval "Hello") "Hello")
+(check-expect (startEval
+               '1)
+              '1)
+
+(check-expect (startEval
+               "Hello")
+              "Hello")
 
 ; quote
-(check-expect (startEval '(quote a)) (quote a))
-(check-expect (startEval '(quote 1)) (quote 1))
-(check-expect (startEval '(quote (123))) (quote (123)))
+(check-expect (startEval
+               '(quote a))
+              (quote a))
+
+(check-expect (startEval
+               '(quote (123)))
+              (quote (123)))
 
 ; Binary operators
-(check-expect (startEval '(+ 1 2)) (+ 1 2))
-(check-expect (startEval '(+ 1 (+ 1 2))) (+ 1 (+ 1 2)))
-(check-expect (startEval '(+ (+ 2 2) (+ 2 2))) (+ (+ 2 2) (+ 2 2)))
-(check-expect (startEval '(- 2 1)) (- 2 1))
-(check-expect (startEval '(- 2 (- 1 1))) (- 2 (- 1 1)))
-(check-expect (startEval '(- (- 2 1) (+ 2 1))) (- (- 2 1) (+ 2 1)))
-(check-expect (startEval '(* 2 1)) (* 2 1))
-(check-expect (startEval '(* 2 (* 2 1))) (* 2 (* 2 1)))
-(check-expect (startEval '(* (* 2 2) (+ 2 2))) (* (* 2 2) (+ 2 2)))
-(check-expect (startEval '(/ 2 1)) (/ 2 1))
-(check-expect (startEval '(/ 4 (/ 2 1))) (/ 4 (/ 2 1)))
-(check-expect (startEval '(/ (/ 4 2) (/ 4 2))) (/ (/ 4 2) (/ 4 2)))
-(check-expect (startEval '(= 2 1)) (= 2 1))
-(check-expect (startEval '(<= 2 1)) (<= 2 1))
-(check-expect (startEval '(>= 2 1)) (>= 2 1))
-(check-expect (startEval '(> 2 1)) (> 2 1))
-(check-expect (startEval '(< 2 1)) (< 2 1))
-(check-expect (startEval '(equal? 1 2)) (equal? 1 2))
-(check-expect (startEval '(equal? '1 '2)) (equal? '1 '2))
-(check-expect (startEval '(equal? '(123) '(123))) (equal? '(123) '(123)))
-(check-expect (startEval '(equal? (+ 1 1) (+ 1 1))) (equal? (+ 1 1) (+ 1 1)))
+(check-expect (startEval
+               '(+ (+ 2 2) (+ 2 2)))
+              (+ (+ 2 2) (+ 2 2)))
+
+(check-expect (startEval
+               '(- (- 2 1) (+ 2 1)))
+              (- (- 2 1) (+ 2 1)))
+
+(check-expect (startEval
+               '(* (* 2 2) (+ 2 2)))
+              (* (* 2 2) (+ 2 2)))
+
+(check-expect (startEval
+               '(/ (/ 4 2) (/ 4 2)))
+              (/ (/ 4 2) (/ 4 2)))
+
+(check-expect (startEval
+               '(= 2 1))
+              (= 2 1))
+
+(check-expect (startEval
+               '(<= 2 1))
+              (<= 2 1))
+
+(check-expect (startEval
+               '(>= 2 1))
+              (>= 2 1))
+
+(check-expect (startEval
+               '(> 2 1))
+              (> 2 1))
+
+(check-expect (startEval
+               '(< 2 1))
+              (< 2 1))
+
+(check-expect (startEval
+               '(equal? '(123) '(123)))
+              (equal? '(123) '(123)))
+
+(check-expect (startEval
+               '(equal? (+ 1 1) (+ 1 1)))
+              (equal? (+ 1 1) (+ 1 1)))
 
 ; List operations
-(check-expect (startEval '(car '(1 2 3))) (car '(1 2 3)))
-(check-expect (startEval '(car '((1 2) 2 3))) (car '((1 2) 2 3)))
-(check-expect (startEval '(car '(((1 2) 1 2) 2 3))) (car '(((1 2) 1 2) 2 3)))
-(check-expect (startEval '(car (car '((1 2) 3)))) (car (car '((1 2) 3))))
-(check-expect (startEval '(car (car (car '((((1 2) 3) 4)))))) (car (car (car '((((1 2) 3) 4))))))
-(check-expect (startEval '(cdr '(1 2 3))) (cdr '(1 2 3)))
-(check-expect (startEval '(cdr '(2 3 (1 2)))) (cdr '(2 3 (1 2))))
-(check-expect (startEval '(cdr '(2 3 ((1 2) 1 2)))) (cdr '(2 3 ((1 2) 1 2))))
-(check-expect (startEval '(cdr (cdr '(1 2 (3 4 5))))) (cdr (cdr '(1 2 (3 4 5)))))
-(check-expect (startEval '(car (cdr (cdr '(1 2 (3 4 5)))))) (car (cdr (cdr '(1 2 (3 4 5))))))
-(check-expect (startEval '(cons 1 2)) (cons 1 2))
-(check-expect (startEval '(cons '(1 2) '(1 2))) (cons '(1 2) '(1 2)))
-(check-expect (startEval '(cons (cons 1 2) 3)) (cons (cons 1 2) 3))
-(check-expect (startEval '(cons (cons 1 2) (car '(3 4)))) (cons (cons 1 2) (car '(3 4))))
-(check-expect (startEval '(car (cons (cons 1 2) (cdr '(3 4))))) (car (cons (cons 1 2) (cdr '(3 4)))))
-(check-expect (startEval '(pair? '(1 2))) (pair? '(1 2)))
-(check-expect (startEval '(pair? (car (cons (cons 1 2) (cdr '(3 4)))))) (pair? (car (cons (cons 1 2) (cdr '(3 4))))))
+(check-expect (startEval
+               '(car (car (car '((((1 2) 3) 4))))))
+              (car (car (car '((((1 2) 3) 4))))))
+
+(check-expect (startEval
+               '(car (cdr (cdr '(1 2 (3 4 5))))))
+              (car (cdr (cdr '(1 2 (3 4 5))))))
+
+(check-expect (startEval
+               '(pair? (car (cons (cons 1 2) (cdr '(3 4))))))
+              (pair? (car (cons (cons 1 2) (cdr '(3 4))))))
 
 ; if statements
 (check-expect (startEval
-               '(if (< (+ 1 2) (- 4 3))
-                    #t
-                    #f))
-              (if (< (+ 1 2) (- 4 3))
-                  #t
-                  #f))
-
-(check-expect (startEval
-               '(if (equal? (cons 1 2) (cons 2 1))
-                    #t
-                    #f))
-              (if (equal? (cons 1 2) (cons 2 1))
-                    #t
-                    #f))
-
-(check-expect (startEval
-               '(if (if (< 1 2)
-                        #t
-                        #f)
-                    (+ 1 2)
-                    (+ 3 4)))
-              (if (if (< 1 2)
-                        #t
-                        #f)
-                    (+ 1 2)
-                    (+ 3 4)))
+               '(if (if (< 1 2) #t #f) (+ 1 2) (+ 3 4)))
+              (if (if (< 1 2) #t #f) (+ 1 2) (+ 3 4)))
 
 ; lambda expressions and function application
 (check-expect (startEval
                '((lambda (x) x) 1))
               ((lambda (x) x) 1))
+
 (check-expect (startEval
                '((lambda (x) (quote x)) 1))
               ((lambda (x) (quote x)) 1))
-(check-expect (startEval
-               '((lambda (x y) (+ x y)) 1 2))
-              ((lambda (x y) (+ x y)) 1 2))
+
 (check-expect (startEval
                '(((lambda (x y) (lambda (z) (* z y))) 5 6) 10))
               (((lambda (x y) (lambda (z) (* z y))) 5 6) 10))
+
 
 ; Local bindings (let and letrec)
 (check-expect (startEval
                '(let ([x 1] [y 2]) (+ x y)))
               (let ([x 1] [y 2]) (+ x y)))
+
 (check-expect (startEval
                '(letrec ([x 1] [y 2] [z 3]) (+ x (+ y z))))
               (letrec ([x 1] [y 2] [z 3]) (+ x (+ y z))))
+
+; Test from project specification document
 (check-expect (startEval
                '(letrec ((fact
                           (lambda (x)
