@@ -41,11 +41,11 @@
        (updateEnvEntry! env (car vars) (car vals))
        (updateEnvEntries! env (cdr vars) (cdr vals))]))
 
-; Return an empty environment (with primitive function references added):
-(define (emptyEnv) (envInsert (hash) (primitiveNames) (primitiveObjects)))
+; Return an empty environment
+(define (emptyEnv) (hash))
 
 ;=======================================================================================================================
-; Evaluation of Primitive Expressions
+; Evaluation of primitive expressions
 ;=======================================================================================================================
 
 ; Evaluate constants
@@ -162,39 +162,6 @@
 ; Return the environment of a given function
 (define (functionEnvironment fn) (fourth fn))
 
-; Primitive functions
-(define primitiveFunctions
-  (list
-   (list '+ +)
-   (list '- -)
-   (list '* *)
-   (list '/ /)
-   (list '< <)
-   (list '> >)
-   (list '<= <=)
-   (list '>= >=)
-   (list '= =)
-   (list 'car car)
-   (list 'cdr cdr)
-   (list 'cons cons)
-   (list 'pair? pair?)
-   (list 'equal? equal?)))
-
-; Primitive function names
-(define (primitiveNames)
-  (map car primitiveFunctions))
-
-; Primitive function objects
-(define (primitiveObjects)
-  (map (lambda (fn) (list 'primitive (second fn)))
-       primitiveFunctions))
-
-; Determine if a given expression is a primitive function (i.e. already defined)
-(define (primitiveFunction? fn) (equal? (car fn) 'primitive))
-
-; Return the body of a primitive function
-(define (primitiveBody fn) (second fn))
-
 ; Evaluate and return the argument list for a function application
 (define (argList exprs env)
   (map (lambda (argument) (evalEnv argument env)) exprs))
@@ -206,12 +173,9 @@
 
 ; Apply a function
 (define (applyFunction fn args)
-  (cond
-    [(primitiveFunction? fn) (apply (primitiveBody fn) args)]
-    [else
-      (evalEnv
-       (lambdaBody fn)
-       (envInsert (functionEnvironment fn) (lambdaParams fn) args))]))
+  (evalEnv
+   (lambdaBody fn)
+   (envInsert (functionEnvironment fn) (lambdaParams fn) args)))
 
 ;=======================================================================================================================
 ; Local binding (let and letrec)
