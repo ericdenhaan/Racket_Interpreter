@@ -41,11 +41,11 @@
        (updateEnvEntry! env (car vars) (car vals))
        (updateEnvEntries! env (cdr vars) (cdr vals))]))
 
-; Return an empty environment:
+; Return an empty environment (but make sure to add the primitive operators):
 (define (emptyEnv) (hash))
 
 ;=======================================================================================================================
-; Evaluation
+; Evaluation of Primitive Expressions
 ;=======================================================================================================================
 
 ; Evaluate constants
@@ -58,7 +58,7 @@
 (define (evalQuote expr env)
   (second expr))
 
-; Test for binary operator
+; Test for binary operators
 (define (binOpMatch expr)
   (cond
     [(equal? (car expr) '+) #t]
@@ -72,7 +72,7 @@
     [(equal? (car expr) '>) #t]
     [else #f]))
     
-; Evaluate binary operator
+; Evaluate binary operators
 (define (evalBinOp expr env)
   (cond
     [(equal? (car expr) '+) (+ (evalEnv (second expr) env) (evalEnv (third expr) env))]
@@ -135,46 +135,70 @@
       (evalEnv (third stmt) env)
       (evalEnv (fourth stmt) env)))
 
-; Evaluate lambdas
-
-; Some helper functions:
+;=======================================================================================================================
+; Evaluation of lambda functions and function application
+;=======================================================================================================================
 
 ; Return the parameter section of a lambda expression
 (define (lambdaParams fn) (second fn))
 
 ; Return the body of a lambda expression
-(define (lambdaBody fn) (fourth fn))
+(define (lambdaBody fn) (third fn))
 
 ; Create the the textual form of a lambda expression
-(define (createLambdaExpr args body) (list 'lambda (list args) body))
+(define (createLambdaExpr args body env) (list 'lambda args body env))
 
 ; Determine if a given expression is a lambda expression
 (define (lambdaExpr? expr)
   (and (pair? expr) (equal? (car expr) 'lambda) (list? (lambdaParams expr))))
 
-; Determine whether beta reduction is possible
-(define (betaReducable? expr)
-  ; Return true if expr is a list, where the first item is a lambda expression
-  ; and the second item is a value that can be applied to the first item
-  (and (pair? expr) (lambdaExpr? expr) (pair? cdr expr)))
+; Evaluate lambda expressions
+(define (evalLambda expr env)
+  (createLambdaExpr (lambdaParams expr) (lambdaBody expr) env))
 
-; Alpha conversion
-(define (alphaConvert expr sourceArg destArg)
-  (cond 
-    [((equal? expr sourceArg) destArg)]
-    ; If we have an ID collision between expr and sourceArg, return expr
-    ; Else create a new lambda expression and substitute sourceArg for destArg
-    [(lambdaExpr? expr) (if (equal? (lambdaParams expr) sourceArg)
-                             expr
-                             (createLambdaExpr (lambdaParams expr)
-                                               (alphaConvert (lambdaBody expr) sourceArg destArg)))]
-    ; If we have a list of expressions, call alpha conversion recursively on each list member
-    [(pair? expr) (cons (alphaConvert (car expr) sourceArg destArg)
-                        (alphaConvert (cdr expr) sourceArg destArg))]
-    [else expr]))
+; Determine if a given expression is a function application
+(define (functionApplication? expr) (pair? expr))
 
-; Beta reduction
+; Useful definitions for function application
+(define (operator expr) (car expr))
 
+(define (operands expr) (cdr expr))
+
+(define (firstOperand operands) (car operands))
+
+(define (remainingOperands operands) (cdr operands))
+
+(define (lastExpression? exprList) (null? (cdr exprList)))
+
+(define (functionEnvironment fn) (fourth fn))
+
+; Evaluate and return the argument list for a function application
+(define (argList exprs env)
+  (map (lambda (argument) (evalEnv argument env)) exprs))
+
+; Evaluate compound functions
+(define (evalCompoundFunction exprList env)
+  (cond
+    [(not (pair? exprList)) (evalEnv exprList env)]
+    [(lastExpression? exprList) (evalEnv (car exprList) env)]
+    [else
+     (evalEnv (car exprList) env)
+     (evalCompoundFunction (remainingOperands exprList) env)]))
+
+; Evaluate a function application
+(define (evalFunctionApplication expr env)
+     (applyFunction (evalEnv (operator expr) env)
+         (argList (operands expr) env)))
+
+; Apply a function
+(define (applyFunction fn args)
+      (evalCompoundFunction
+       (lambdaBody fn)
+       (envInsert (functionEnvironment fn) (lambdaParams fn) args)))
+
+;=======================================================================================================================
+; startEval
+;=======================================================================================================================
 
 ; startEval function
 ; Call evalEnv adding an empty environment
@@ -203,9 +227,13 @@
     ; if
     [(equal? (car program) 'if) (evalIf program env)]
     ; lambda
-    ; [(equal? (car (car program)) 'lambda) (evalLambda program env)]
-
-    ; If we do not match any of the forms above, 
+    [(equal? (car program) 'lambda) (evalLambda program env)]
+    ; Function application
+    [(functionApplication? program) (evalFunctionApplication program env)]
+    ; let
+    ;[(equal? (car program 'let)) (evalLet program env)]
+    ; letRec
+    ;[(equal? (car program 'letrec)) (evalLetRec program env)]
     ))
 
 ;=======================================================================================================================
@@ -294,6 +322,8 @@
 
 ; lambda
 (check-expect (startEval `((lambda (x) x) 1)) ((lambda (x) x) 1))
+; (check-expect (startEval `((lambda (x y) (+ x y)) 1 2)) ((lambda (x y) (+ x y)) 1 2))
+; (check-expect (startEval `(((lambda (x y) (lambda (z) (* z y))) 5 6) 10)) (((lambda (x y) (lambda (z) (* z y))) 5 6) 10))
 
 ; Run the tests
 (test)
